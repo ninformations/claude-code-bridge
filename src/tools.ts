@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import zodToJsonSchema from 'zod-to-json-schema';
 import {
   ExecuteInputSchema,
   SessionIdInputSchema,
@@ -12,20 +11,102 @@ import type { SessionManager } from './executor/session-manager.js';
 import { executeOneShot } from './executor/one-shot.js';
 
 /**
+ * A subset of JSON Schema sufficient for advertising MCP tool inputs.
+ * Hand-written here rather than generated from zod, to avoid pulling in
+ * a third-party converter for what amounts to a few dozen lines of JSON.
+ * Runtime validation still goes through the zod schemas in types.ts; this
+ * shape is only the protocol-level "what arguments do you accept" hint.
+ */
+type JsonSchema = Record<string, unknown>;
+
+/**
  * MCP tool descriptor + handler pair.
  */
 export interface ToolDef<I> {
   name: string;
   description: string;
-  inputSchema: ReturnType<typeof zodToJsonSchema>;
+  inputSchema: JsonSchema;
   parse: (raw: unknown) => I;
   handle: (input: I) => Promise<{ text: string; isError?: boolean }>;
 }
 
-function describe<T extends z.ZodTypeAny>(schema: T) {
-  // The MCP SDK wants a JSONSchema-shaped object for inputSchema.
-  return zodToJsonSchema(schema, { $refStrategy: 'none' });
-}
+const PERMISSION_MODE_VALUES = ['plan', 'acceptEdits', 'default', 'bypassPermissions'] as const;
+
+const COMMON_OPTIONAL_PROPS: JsonSchema = {
+  mcpConfigPath: {
+    type: 'string',
+    description:
+      'Absolute path to an { mcpServers: {...} } JSON file. Must be inside CLAUDE_BRIDGE_CONFIG_DIRS.',
+  },
+  permissionMode: {
+    type: 'string',
+    enum: [...PERMISSION_MODE_VALUES],
+    description:
+      'Permission policy for spawned tools. bypassPermissions is rejected unless CLAUDE_BRIDGE_ALLOW_BYPASS=1.',
+  },
+  allowedTools: {
+    type: 'array',
+    items: { type: 'string' },
+    description: 'Allowlist of tool names to expose to Claude Code.',
+  },
+  disallowedTools: {
+    type: 'array',
+    items: { type: 'string' },
+    description: 'Blocklist of tool names to hide from Claude Code.',
+  },
+  cwd: { type: 'string', description: 'Working directory for the subprocess.' },
+};
+
+const EXECUTE_SCHEMA: JsonSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['prompt'],
+  properties: {
+    prompt: { type: 'string', minLength: 1, description: 'The task to execute.' },
+    ...COMMON_OPTIONAL_PROPS,
+    timeoutSeconds: {
+      type: 'integer',
+      minimum: 1,
+      maximum: 3600,
+      description: 'Per-call timeout, overrides CLAUDE_BRIDGE_EXECUTE_TIMEOUT.',
+    },
+  },
+};
+
+const SESSION_START_SCHEMA: JsonSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['initialPrompt'],
+  properties: {
+    initialPrompt: { type: 'string', minLength: 1, description: 'First user message of the session.' },
+    ...COMMON_OPTIONAL_PROPS,
+  },
+};
+
+const SESSION_SEND_SCHEMA: JsonSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['sessionId', 'message'],
+  properties: {
+    sessionId: { type: 'string', format: 'uuid', description: 'bridgeSessionId from session_start.' },
+    message: { type: 'string', minLength: 1, description: 'Next user message to send.' },
+  },
+};
+
+const SESSION_ID_SCHEMA: JsonSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['sessionId'],
+  properties: {
+    sessionId: { type: 'string', format: 'uuid', description: 'bridgeSessionId from session_start.' },
+  },
+};
+
+const EMPTY_SCHEMA: JsonSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {},
+};
 
 function parser<T extends z.ZodTypeAny>(
   schema: T,
@@ -55,7 +136,7 @@ export function buildTools(
       'assistant text. Use this for one-shot work that does not need ' +
       'follow-up clarifying questions. For interactive Q&A, prefer the ' +
       'session_* tools.',
-    inputSchema: describe(ExecuteInputSchema),
+    inputSchema: EXECUTE_SCHEMA,
     parse: parser(ExecuteInputSchema) as (raw: unknown) => unknown,
     handle: async (raw) => {
       const input = raw as z.infer<typeof ExecuteInputSchema>;
@@ -84,7 +165,7 @@ export function buildTools(
       'alive across multiple send/receive cycles until session_end is ' +
       'called, the idle timeout elapses, or the bridge hits its max ' +
       'session lifetime.',
-    inputSchema: describe(SessionStartInputSchema),
+    inputSchema: SESSION_START_SCHEMA,
     parse: parser(SessionStartInputSchema) as (raw: unknown) => unknown,
     handle: async (raw) => {
       const input = raw as z.infer<typeof SessionStartInputSchema>;
@@ -109,7 +190,7 @@ export function buildTools(
       'Send a follow-up user message to an existing session and wait for ' +
       'the assistant turn to complete. Returns the assistant text for that ' +
       'turn only. The session remains open for further send_* calls.',
-    inputSchema: describe(SessionSendInputSchema),
+    inputSchema: SESSION_SEND_SCHEMA,
     parse: parser(SessionSendInputSchema) as (raw: unknown) => unknown,
     handle: async (raw) => {
       const input = raw as z.infer<typeof SessionSendInputSchema>;
@@ -127,7 +208,7 @@ export function buildTools(
       'Close a persistent session and free its subprocess. Returns the ' +
       'final session record. Safe to call on an already-closed session ' +
       'only if you keep the id; otherwise expect an error.',
-    inputSchema: describe(SessionIdInputSchema),
+    inputSchema: SESSION_ID_SCHEMA,
     parse: parser(SessionIdInputSchema) as (raw: unknown) => unknown,
     handle: async (raw) => {
       const input = raw as z.infer<typeof SessionIdInputSchema>;
@@ -140,7 +221,7 @@ export function buildTools(
     name: 'session_get',
     description:
       'Look up the current status of one session by its bridgeSessionId.',
-    inputSchema: describe(SessionIdInputSchema),
+    inputSchema: SESSION_ID_SCHEMA,
     parse: parser(SessionIdInputSchema) as (raw: unknown) => unknown,
     handle: async (raw) => {
       const input = raw as z.infer<typeof SessionIdInputSchema>;
@@ -160,7 +241,7 @@ export function buildTools(
     description:
       'List all sessions currently held open by this bridge instance, ' +
       'including their status and ages.',
-    inputSchema: describe(z.object({})),
+    inputSchema: EMPTY_SCHEMA,
     parse: parser(z.object({})) as (raw: unknown) => unknown,
     handle: async () => {
       const list = sessions.list();
