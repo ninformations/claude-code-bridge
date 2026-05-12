@@ -42,18 +42,28 @@ export async function validateMcpConfigPath(
   } catch {
     throw new Error('mcpConfigPath does not exist or is not readable');
   }
-
-  // Belt-and-suspenders: re-resolve to remove any residual `..` and confirm
-  // the realpath is still anchored under an allowed dir, comparing canonical
-  // forms of both sides.
   const canonical = path.resolve(realPath);
-  const insideAllowed = allowedDirs.some((dirRaw) => {
-    const dir = path.resolve(dirRaw);
+
+  // Resolve the allow-list dirs through realpath too. Without this, platforms
+  // where the configured dir contains a symlink in its path (notably macOS,
+  // where /tmp → /private/tmp and /var → /private/var) reject every input,
+  // because the input's realpath has been canonicalized but the dir hasn't.
+  // If an allow-dir doesn't yet exist we fall back to the resolved path —
+  // operators may legitimately point at a path that will be created later.
+  const realAllowedDirs = await Promise.all(
+    allowedDirs.map(async (dirRaw) => {
+      const resolved = path.resolve(dirRaw);
+      try {
+        return await fs.realpath(resolved);
+      } catch {
+        return resolved;
+      }
+    }),
+  );
+
+  const insideAllowed = realAllowedDirs.some((dir) => {
     const rel = path.relative(dir, canonical);
-    return (
-      rel === '' ||
-      (!rel.startsWith('..') && !path.isAbsolute(rel))
-    );
+    return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
   });
   if (!insideAllowed) {
     throw new Error(

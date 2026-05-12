@@ -131,4 +131,24 @@ describe('validateMcpConfigPath', () => {
       /larger than 1MB/,
     );
   });
+
+  it('accepts when the allow-dir itself contains a symlinked path component', async () => {
+    // Regression: on macOS, os.tmpdir() returns /var/folders/... whose
+    // realpath is /private/var/folders/... Without realpath'ing the allow-dir
+    // too, every legitimate file would be rejected as "outside the allow-list"
+    // because the file's realpath has been canonicalized but the dir hasn't.
+    const realDir = path.join(tmpRoot, 'real-target');
+    await fs.mkdir(realDir, { recursive: true });
+    const linkDir = path.join(tmpRoot, 'link-to-target');
+    try {
+      await fs.symlink(realDir, linkDir);
+    } catch {
+      // Some platforms (Windows non-admin) can't create symlinks; skip cleanly.
+      return;
+    }
+    const cfgViaLink = path.join(linkDir, 'cfg.json');
+    await fs.writeFile(cfgViaLink, JSON.stringify({ mcpServers: {} }));
+    const got = await validateMcpConfigPath(cfgViaLink, [linkDir]);
+    assert.equal(got, await fs.realpath(cfgViaLink));
+  });
 });
