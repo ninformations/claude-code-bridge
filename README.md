@@ -1,4 +1,4 @@
-# claude-code-bridge
+# @astami/claude-code-bridge
 
 A small, hardened MCP server that bridges an MCP client (Claude Desktop, Cowork, Cursor, anything that speaks MCP) to the [Claude Code](https://docs.claude.com/claude-code) CLI. It supports both one-shot execution and persistent Q&A sessions over Claude Code's stream-json protocol, and ships with sandboxing, secret-aware logging, and tests.
 
@@ -15,13 +15,13 @@ If your MCP client is good at planning and your terminal Claude Code is good at 
 ## Install
 
 ```bash
-npm install -g claude-code-bridge
+npm install -g @astami/claude-code-bridge
 ```
 
 Or run without installing:
 
 ```bash
-npx claude-code-bridge
+npx @astami/claude-code-bridge
 ```
 
 You need Node.js 20+ and the Claude Code CLI on your PATH (or pointed at via `CLAUDE_CODE_PATH`).
@@ -35,7 +35,7 @@ Add the bridge to your MCP client's config. For Claude Desktop, edit `claude_des
   "mcpServers": {
     "claude-code-bridge": {
       "command": "npx",
-      "args": ["claude-code-bridge"],
+      "args": ["@astami/claude-code-bridge"],
       "env": {
         "CLAUDE_CODE_PATH": "claude"
       }

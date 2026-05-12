@@ -33,6 +33,6 @@ produced and validated.
 
 ## Yanking a bad release
 
-`npm deprecate claude-code-bridge@x.y.z "broken — use x.y.z+1"` is preferred
+`npm deprecate @astami/claude-code-bridge@x.y.z "broken — use x.y.z+1"` is preferred
 over `npm unpublish`, since unpublish breaks downstream consumers without
 warning. Cut a patch release with the fix, then deprecate the bad version.
