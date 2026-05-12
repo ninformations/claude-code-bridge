@@ -18,8 +18,8 @@
     "dev": "tsc --watch",
     "start": "node build/index.js",
     "lint": "tsc --noEmit",
-    "test": "node --test --import tsx tests/*.test.ts",
-    "test:watch": "node --test --watch --import tsx tests/*.test.ts",
+    "test": "tsc -p tsconfig.test.json && node --test build-tests/tests/*.test.js",
+    "test:only": "node --test build-tests/tests/*.test.js",
     "prepublishOnly": "npm run lint && npm test && npm run build"
   },
   "keywords": [
@@ -40,7 +40,6 @@
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
-    "tsx": "^4.19.0",
     "typescript": "^5.5.0"
   }
 }

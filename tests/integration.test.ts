@@ -15,14 +15,15 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { fileURLToPath } from 'node:url';
 import { loadConfigFromEnv } from '../src/config.js';
 import { Logger } from '../src/log.js';
 import { executeOneShot } from '../src/executor/one-shot.js';
 import { SessionManager } from '../src/executor/session-manager.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const FAKE_CLAUDE = path.resolve(__dirname, 'fixtures/fake-claude.js');
+// Anchored to the package root so the fixture path is correct whether the
+// test is run from source (tsx) or from compiled output (build-tests/).
+// Both invocations have the package root as cwd.
+const FAKE_CLAUDE = path.resolve(process.cwd(), 'tests/fixtures/fake-claude.js');
 
 /**
  * Build a bridge config that points at fake-claude and whitelists the
