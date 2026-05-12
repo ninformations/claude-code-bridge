@@ -46,6 +46,14 @@ describe('buildSubprocessEnv', () => {
     assert.equal(out.CLAUDE_CODE_PATH, '/usr/local/bin/claude');
   });
 
+  it('passes through CLAUDE_CONFIG_DIR for work/personal account selection', () => {
+    const out = buildSubprocessEnv({
+      parentEnv: { CLAUDE_CONFIG_DIR: '/Users/me/.claude-work' },
+      passthroughExtras: [],
+    });
+    assert.equal(out.CLAUDE_CONFIG_DIR, '/Users/me/.claude-work');
+  });
+
   it('passes through opt-in extras', () => {
     const out = buildSubprocessEnv({
       parentEnv: { GITHUB_TOKEN: 'ghp_xxx', SOMETHING_ELSE: 'x' },

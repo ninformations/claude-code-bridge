@@ -52,6 +52,14 @@ const ALWAYS_PASSTHROUGH = new Set<string>([
 const CLAUDE_CODE_PREFIX = 'CLAUDE_CODE_';
 
 /**
+ * Claude Code's account/profile selector. Not prefixed CLAUDE_CODE_ for
+ * historical reasons, but documented and routinely used to swap between
+ * work and personal accounts. No secret content (it's a directory path),
+ * so safe to allow-list by default.
+ */
+const CLAUDE_CONFIG_DIR = 'CLAUDE_CONFIG_DIR';
+
+/**
  * Pattern of var names that look secret-ish. Used only as belt-and-suspenders;
  * the primary protection is the whitelist itself, but if a future change
  * accidentally widens the whitelist we want one more line of defense.
@@ -76,6 +84,7 @@ export function buildSubprocessEnv(
     const allowed =
       ALWAYS_PASSTHROUGH.has(key) ||
       key.startsWith(CLAUDE_CODE_PREFIX) ||
+      key === CLAUDE_CONFIG_DIR ||
       allowedExtras.has(key);
 
     if (!allowed) continue;

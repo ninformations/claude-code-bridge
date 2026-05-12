@@ -51,6 +51,7 @@ Restart your client. You should see six tools exposed: `execute`, `session_start
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `CLAUDE_CODE_PATH` | `claude` | Path to the Claude Code CLI binary. |
+| `CLAUDE_CONFIG_DIR` | (unset) | Selects which Claude Code account/profile the spawned subprocess uses. Point it at the directory of the account you want (work vs. personal). Passed through to the subprocess. |
 | `CLAUDE_BRIDGE_CONFIG_DIRS` | `$HOME` | Colon-separated (`;`-separated on Windows) directories from which `mcpConfigPath` may be loaded. Absolute paths only; `..`-escapes and symlink targets outside these dirs are rejected. |
 | `CLAUDE_BRIDGE_DEFAULT_CWD` | (per-call tempdir) | Default working directory for spawned subprocesses. |
 | `CLAUDE_BRIDGE_ALLOW_BYPASS` | `0` | Set to `1` to allow callers to pass `permissionMode=bypassPermissions`. Off by default — see [Security model](#security-model). |
