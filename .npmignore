@@ -1,0 +1,12 @@
+src/
+tests/
+.github/
+tsconfig.json
+.eslintrc*
+.prettierrc*
+.gitignore
+*.test.ts
+*.tmp
+*.bak
+.env*
+coverage/
