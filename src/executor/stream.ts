@@ -1,5 +1,6 @@
 import type { Readable } from 'node:stream';
 import { StreamChunkSchema, type StreamChunk } from '../types.js';
+import type { ProgressReporter } from '../progress.js';
 
 /**
  * Async-iterate parsed stream-json chunks from a Readable stream.
@@ -81,6 +82,7 @@ export function formatUserMessage(text: string): string {
 export async function collectTurn(
   iterator: AsyncIterator<StreamChunk>,
   signal?: AbortSignal,
+  reporter?: ProgressReporter,
 ): Promise<{
   text: string;
   resultChunk: StreamChunk | null;
@@ -109,16 +111,44 @@ export async function collectTurn(
 
     if (chunk.type === 'system' && (chunk as { subtype?: string }).subtype === 'init') {
       systemInit = chunk;
+      const sid = (chunk as { session_id?: unknown }).session_id;
+      reporter?.report(
+        typeof sid === 'string'
+          ? `connected: claude session ${sid.slice(0, 8)}`
+          : 'connected',
+      );
       continue;
     }
 
     if (chunk.type === 'assistant') {
-      const c = chunk as { message?: { content?: Array<{ type?: string; text?: string }> } };
+      const c = chunk as { message?: { content?: Array<{ type?: string; text?: string; name?: string }> } };
       const content = c.message?.content ?? [];
+      let turnTextChars = 0;
+      let toolName: string | undefined;
       for (const part of content) {
         if (part.type === 'text' && typeof part.text === 'string') {
           text += part.text;
+          turnTextChars += part.text.length;
+        } else if (part.type === 'tool_use' && typeof part.name === 'string') {
+          toolName = part.name;
         }
+      }
+      if (toolName !== undefined) {
+        reporter?.report(`calling tool: ${toolName}`);
+      } else if (turnTextChars > 0) {
+        reporter?.report(`assistant: ${turnTextChars} chars`);
+      }
+      continue;
+    }
+
+    if (chunk.type === 'user') {
+      // tool_result frames come back as type=user in the stream
+      const c = chunk as { message?: { content?: Array<{ type?: string }> } };
+      const hasToolResult = (c.message?.content ?? []).some(
+        (part) => part?.type === 'tool_result',
+      );
+      if (hasToolResult) {
+        reporter?.report('got tool result');
       }
       continue;
     }
@@ -127,6 +157,7 @@ export async function collectTurn(
       resultChunk = chunk;
       const c = chunk as { is_error?: boolean; subtype?: string };
       if (c.is_error === true || c.subtype === 'error') isError = true;
+      reporter?.report(isError ? 'finished with error' : 'finished');
       break;
     }
   }

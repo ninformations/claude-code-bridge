@@ -8,9 +8,10 @@ import type { BridgeConfig } from './config.js';
 import type { Logger } from './log.js';
 import { SessionManager } from './executor/session-manager.js';
 import { buildTools } from './tools.js';
+import { makeProgressReporter, type ProgressToken } from './progress.js';
 
 const NAME = 'claude-code-bridge';
-const VERSION = '0.1.0';
+const VERSION = '0.2.0';
 
 export interface ServerHandles {
   start(): Promise<void>;
@@ -59,8 +60,21 @@ export function createServer(config: BridgeConfig, log: Logger): ServerHandles {
       };
     }
 
+    // If the client opted into progress notifications by including
+    // _meta.progressToken in the request, build a reporter so long-running
+    // tool calls can periodically signal "still working" to keep the host's
+    // per-call timeout from firing. Hosts that don't honor progress see
+    // exactly the old behavior.
+    const meta = (req.params as { _meta?: { progressToken?: ProgressToken } })
+      ._meta;
+    const reporter = makeProgressReporter({
+      server,
+      progressToken: meta?.progressToken,
+      logger: log,
+    });
+
     try {
-      const out = await t.handle(input);
+      const out = await t.handle(input, reporter);
       return {
         ...(out.isError ? { isError: true } : {}),
         content: [{ type: 'text', text: out.text }],
@@ -72,6 +86,8 @@ export function createServer(config: BridgeConfig, log: Logger): ServerHandles {
         isError: true,
         content: [{ type: 'text', text: msg }],
       };
+    } finally {
+      reporter.stop();
     }
   });
 

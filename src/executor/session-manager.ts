@@ -14,6 +14,7 @@ import type {
   SessionStartInput,
 } from '../types.js';
 import type { Logger } from '../log.js';
+import type { ProgressReporter } from '../progress.js';
 
 interface InternalSession extends BridgeSession {
   child: ChildProcessWithoutNullStreams;
@@ -46,7 +47,10 @@ export class SessionManager {
     private readonly log: Logger,
   ) {}
 
-  async start(input: SessionStartInput): Promise<{
+  async start(
+    input: SessionStartInput,
+    reporter?: ProgressReporter,
+  ): Promise<{
     session: BridgeSession;
     initialText: string;
   }> {
@@ -74,6 +78,7 @@ export class SessionManager {
 
     const bridgeSessionId = randomUUID();
     this.log.debug(`starting session ${bridgeSessionId}`);
+    reporter?.report('spawning claude code session');
 
     const child = spawnClaudeCode({
       config: this.config,
@@ -114,7 +119,7 @@ export class SessionManager {
     // Send the initial user message.
     child.stdin.write(formatUserMessage(input.initialPrompt));
 
-    const collected = await collectTurn(chunkIterator);
+    const collected = await collectTurn(chunkIterator, undefined, reporter);
     if (collected.systemInit) {
       const sid = (collected.systemInit as { session_id?: unknown }).session_id;
       if (typeof sid === 'string') internal.claudeSessionId = sid;
@@ -135,6 +140,7 @@ export class SessionManager {
   async send(
     sessionId: string,
     message: string,
+    reporter?: ProgressReporter,
   ): Promise<{ session: BridgeSession; text: string }> {
     const s = this.sessions.get(sessionId);
     if (!s) throw new Error('Unknown sessionId');
@@ -150,8 +156,9 @@ export class SessionManager {
     this.resetIdle(s);
 
     try {
+      reporter?.report('sending message to session');
       s.child.stdin.write(formatUserMessage(message));
-      const collected = await collectTurn(s.chunkIterator);
+      const collected = await collectTurn(s.chunkIterator, undefined, reporter);
       s.lastActivityAt = Date.now();
       s.status = collected.isError ? 'errored' : 'idle';
       if (collected.isError) {

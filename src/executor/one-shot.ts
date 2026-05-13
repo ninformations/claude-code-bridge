@@ -8,11 +8,13 @@ import {
 import type { BridgeConfig } from '../config.js';
 import type { ExecuteInput, ExecuteResult } from '../types.js';
 import type { Logger } from '../log.js';
+import type { ProgressReporter } from '../progress.js';
 
 export async function executeOneShot(
   input: ExecuteInput,
   config: BridgeConfig,
   log: Logger,
+  reporter?: ProgressReporter,
 ): Promise<ExecuteResult> {
   const start = Date.now();
 
@@ -43,6 +45,7 @@ export async function executeOneShot(
     : config.executeTimeoutMs;
 
   log.debug(`spawning claude one-shot: ${config.claudeCodePath} ${args.length} args`);
+  reporter?.report('spawning claude code subprocess');
 
   const child = spawnClaudeCode({
     config,
@@ -75,7 +78,7 @@ export async function executeOneShot(
   let collected: Awaited<ReturnType<typeof collectTurn>>;
   try {
     const iterator = readStreamJson(child.stdout)[Symbol.asyncIterator]();
-    collected = await collectTurn(iterator, ac.signal);
+    collected = await collectTurn(iterator, ac.signal, reporter);
   } finally {
     clearTimeout(timer);
   }

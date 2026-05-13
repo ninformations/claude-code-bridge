@@ -19,6 +19,21 @@ import { loadConfigFromEnv } from '../src/config.js';
 import { Logger } from '../src/log.js';
 import { executeOneShot } from '../src/executor/one-shot.js';
 import { SessionManager } from '../src/executor/session-manager.js';
+import type { ProgressReporter } from '../src/progress.js';
+
+function makeRecordingReporter(): {
+  reporter: ProgressReporter;
+  messages: string[];
+} {
+  const messages: string[] = [];
+  return {
+    reporter: {
+      report: (m: string) => messages.push(m),
+      stop: () => {},
+    },
+    messages,
+  };
+}
 
 // Anchored to the package root so the fixture path is correct whether the
 // test is run from source (tsx) or from compiled output (build-tests/).
@@ -226,6 +241,38 @@ describe('integration: executeOneShot', () => {
     const config = loadConfigFromEnv(process.env);
     const res = await executeOneShot({ prompt: 'x' }, config, SILENT_LOG);
     assert.equal(res.isError, true);
+  });
+
+  it('reports progress events to the reporter during execution', async () => {
+    Object.assign(process.env, shimEnv());
+    const config = loadConfigFromEnv(process.env);
+    const { reporter, messages } = makeRecordingReporter();
+    const res = await executeOneShot(
+      { prompt: 'hello progress' },
+      config,
+      SILENT_LOG,
+      reporter,
+    );
+    assert.equal(res.isError, false);
+    // Expect at minimum: "spawning..." before the subprocess, "connected..."
+    // from system.init, "assistant: ..." from the assistant text chunk, and
+    // "finished" from the result chunk.
+    assert.ok(
+      messages.some((m) => m.includes('spawning')),
+      `missing spawn message: ${JSON.stringify(messages)}`,
+    );
+    assert.ok(
+      messages.some((m) => m.startsWith('connected')),
+      `missing connect message: ${JSON.stringify(messages)}`,
+    );
+    assert.ok(
+      messages.some((m) => m.startsWith('assistant:')),
+      `missing assistant message: ${JSON.stringify(messages)}`,
+    );
+    assert.ok(
+      messages.some((m) => m.startsWith('finished')),
+      `missing finished message: ${JSON.stringify(messages)}`,
+    );
   });
 
   it('does not leak parent process env to the subprocess', async () => {

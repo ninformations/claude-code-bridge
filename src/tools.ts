@@ -8,6 +8,7 @@ import {
 import type { BridgeConfig } from './config.js';
 import type { Logger } from './log.js';
 import type { SessionManager } from './executor/session-manager.js';
+import type { ProgressReporter } from './progress.js';
 import { executeOneShot } from './executor/one-shot.js';
 
 /**
@@ -21,13 +22,21 @@ type JsonSchema = Record<string, unknown>;
 
 /**
  * MCP tool descriptor + handler pair.
+ *
+ * `handle` takes the validated input plus an optional progress reporter the
+ * server layer constructs from the request's _meta.progressToken. Handlers
+ * that delegate to a long-running subprocess should pass the reporter down
+ * so it can emit notifications/progress while the subprocess works.
  */
 export interface ToolDef<I> {
   name: string;
   description: string;
   inputSchema: JsonSchema;
   parse: (raw: unknown) => I;
-  handle: (input: I) => Promise<{ text: string; isError?: boolean }>;
+  handle: (
+    input: I,
+    reporter: ProgressReporter,
+  ) => Promise<{ text: string; isError?: boolean }>;
 }
 
 const PERMISSION_MODE_VALUES = ['plan', 'acceptEdits', 'default', 'bypassPermissions'] as const;
@@ -138,9 +147,9 @@ export function buildTools(
       'session_* tools.',
     inputSchema: EXECUTE_SCHEMA,
     parse: parser(ExecuteInputSchema) as (raw: unknown) => unknown,
-    handle: async (raw) => {
+    handle: async (raw, reporter) => {
       const input = raw as z.infer<typeof ExecuteInputSchema>;
-      const result = await executeOneShot(input, config, log);
+      const result = await executeOneShot(input, config, log, reporter);
       const summary = JSON.stringify(
         {
           text: result.text,
@@ -167,9 +176,9 @@ export function buildTools(
       'session lifetime.',
     inputSchema: SESSION_START_SCHEMA,
     parse: parser(SessionStartInputSchema) as (raw: unknown) => unknown,
-    handle: async (raw) => {
+    handle: async (raw, reporter) => {
       const input = raw as z.infer<typeof SessionStartInputSchema>;
-      const { session, initialText } = await sessions.start(input);
+      const { session, initialText } = await sessions.start(input, reporter);
       return {
         text: JSON.stringify(
           {
@@ -192,9 +201,9 @@ export function buildTools(
       'turn only. The session remains open for further send_* calls.',
     inputSchema: SESSION_SEND_SCHEMA,
     parse: parser(SessionSendInputSchema) as (raw: unknown) => unknown,
-    handle: async (raw) => {
+    handle: async (raw, reporter) => {
       const input = raw as z.infer<typeof SessionSendInputSchema>;
-      const { session, text } = await sessions.send(input.sessionId, input.message);
+      const { session, text } = await sessions.send(input.sessionId, input.message, reporter);
       return {
         text: JSON.stringify({ session, text }, null, 2),
         isError: session.status === 'errored',
@@ -210,7 +219,7 @@ export function buildTools(
       'only if you keep the id; otherwise expect an error.',
     inputSchema: SESSION_ID_SCHEMA,
     parse: parser(SessionIdInputSchema) as (raw: unknown) => unknown,
-    handle: async (raw) => {
+    handle: async (raw, _reporter) => {
       const input = raw as z.infer<typeof SessionIdInputSchema>;
       const session = await sessions.end(input.sessionId);
       return { text: JSON.stringify({ session }, null, 2) };
@@ -223,7 +232,7 @@ export function buildTools(
       'Look up the current status of one session by its bridgeSessionId.',
     inputSchema: SESSION_ID_SCHEMA,
     parse: parser(SessionIdInputSchema) as (raw: unknown) => unknown,
-    handle: async (raw) => {
+    handle: async (raw, _reporter) => {
       const input = raw as z.infer<typeof SessionIdInputSchema>;
       const session = sessions.get(input.sessionId);
       if (session === null) {
@@ -243,7 +252,7 @@ export function buildTools(
       'including their status and ages.',
     inputSchema: EMPTY_SCHEMA,
     parse: parser(z.object({})) as (raw: unknown) => unknown,
-    handle: async () => {
+    handle: async (_raw, _reporter) => {
       const list = sessions.list();
       return { text: JSON.stringify({ sessions: list }, null, 2) };
     },

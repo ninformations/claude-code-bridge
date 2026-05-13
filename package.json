@@ -1,6 +1,6 @@
 {
   "name": "@astami/claude-code-bridge",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "A small, hardened MCP server that bridges an MCP client (Claude Desktop, Cowork, etc.) to the Claude Code CLI. One-shot execution and persistent Q&A sessions over stream-json.",
   "type": "module",
   "main": "build/index.js",
